@@ -156,16 +156,17 @@ void eval(const std::size_t m, const std::size_t n, const char* name, const Func
 
 int main() {
 	auto swpipe_s2h = [](const std::size_t m, const std::size_t n, const float* const A_f32, half* const A_f16) {
-		constexpr auto block_size = 512;
+		constexpr auto block_size = 256;
+		constexpr auto smem_len = block_size * 16;
 		const auto grid_size = n;
 		if (m * n >= (1lu << 32)) {
-			s2h_swpipe<std::uint32_t, block_size, block_size * 2><<<grid_size, block_size>>>(
+			s2h_swpipe<std::uint32_t, block_size, smem_len><<<grid_size, block_size>>>(
 					m, n,
 					A_f32, m,
 					A_f16, m
 					);
 		} else {
-			s2h_swpipe<std::uint64_t, block_size, block_size * 2><<<grid_size, block_size>>>(
+			s2h_swpipe<std::uint64_t, block_size, smem_len><<<grid_size, block_size>>>(
 					m, n,
 					A_f32, m,
 					A_f16, m
