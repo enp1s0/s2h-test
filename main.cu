@@ -26,11 +26,10 @@ __device__ inline void cp(void* const dst, const void* const src) {
 	}
 }
 
-template <unsigned block_size, class IdxT>
+template <class IdxT, unsigned block_size, unsigned smem_len = block_size * 8>
 __global__
 void s2h_swpipe(const IdxT m, const IdxT n, const float * const as, int ldas, __half *ah, int ldah)
 {
-	constexpr unsigned smem_len = block_size * 8;
 	__shared__ float smem_f32[smem_len];
 	__shared__ half smem_f16[smem_len];
 
@@ -42,15 +41,19 @@ void s2h_swpipe(const IdxT m, const IdxT n, const float * const as, int ldas, __
 			if (reinterpret_cast<long>(ah) % 16 == 0 && ldah % 4 == 0) {
 				for (unsigned j = 0; j < smem_len; j += block_size * 4) {
 					const auto smem_i = j + threadIdx.x * 4;
+					if (smem_len < block_size * 4 && smem_i >= smem_len) break;
 					const auto im = i + smem_i;
 					cp<16>(&smem_f32[smem_i], &as[im + ldas * in]);
 				}
+				__syncthreads();
 			} else if (reinterpret_cast<long>(ah) % 8 == 0 && ldah % 2 == 0) {
 				for (unsigned j = 0; j < smem_len; j += block_size * 2) {
 					const auto smem_i = j + threadIdx.x * 2;
+					if (smem_len < block_size * 2 && smem_i >= smem_len) break;
 					const auto im = i + smem_i;
 					cp<8>(&smem_f32[smem_i], &as[im + ldas * in]);
 				}
+				__syncthreads();
 			} else {
 				for (unsigned j = 0; j < smem_len; j += block_size) {
 					const auto smem_i = j + threadIdx.x;
@@ -68,6 +71,7 @@ void s2h_swpipe(const IdxT m, const IdxT n, const float * const as, int ldas, __
 				__syncthreads();
 				for (unsigned j = 0; j < smem_len; j += block_size * 8) {
 					const auto smem_i = j + threadIdx.x * 8;
+					if (smem_len < block_size * 8 && smem_i >= smem_len) break;
 					const auto im = i + smem_i;
 					cp<16>(&ah[im + ldah * in], &smem_f16[smem_i]);
 				}
@@ -75,6 +79,7 @@ void s2h_swpipe(const IdxT m, const IdxT n, const float * const as, int ldas, __
 				__syncthreads();
 				for (unsigned j = 0; j < smem_len; j += block_size * 4) {
 					const auto smem_i = j + threadIdx.x * 4;
+					if (smem_len < block_size * 4 && smem_i >= smem_len) break;
 					const auto im = i + smem_i;
 					cp<8>(&ah[im + ldah * in], &smem_f16[smem_i]);
 				}
@@ -82,6 +87,7 @@ void s2h_swpipe(const IdxT m, const IdxT n, const float * const as, int ldas, __
 				__syncthreads();
 				for (unsigned j = 0; j < smem_len; j += block_size * 2) {
 					const auto smem_i = j + threadIdx.x * 2;
+					if (smem_len < block_size * 2 && smem_i >= smem_len) break;
 					const auto im = i + smem_i;
 					cp<4>(&ah[im + ldah * in], &smem_f16[smem_i]);
 				}
@@ -153,13 +159,13 @@ int main() {
 		constexpr auto block_size = 512;
 		const auto grid_size = n;
 		if (m * n >= (1lu << 32)) {
-			s2h_swpipe<block_size, std::uint32_t><<<grid_size, block_size>>>(
+			s2h_swpipe<std::uint32_t, block_size, block_size * 2><<<grid_size, block_size>>>(
 					m, n,
 					A_f32, m,
 					A_f16, m
 					);
 		} else {
-			s2h_swpipe<block_size, std::uint64_t><<<grid_size, block_size>>>(
+			s2h_swpipe<std::uint64_t, block_size, block_size * 2><<<grid_size, block_size>>>(
 					m, n,
 					A_f32, m,
 					A_f16, m
