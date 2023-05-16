@@ -26,9 +26,9 @@ __device__ inline void cp(void* const dst, const void* const src) {
 	}
 }
 
-template <unsigned block_size>
+template <unsigned block_size, class IdxT>
 __global__
-void s2h_swpipe(int m, int n, const float * const as, int ldas, __half *ah, int ldah)
+void s2h_swpipe(const IdxT m, const IdxT n, const float * const as, int ldas, __half *ah, int ldah)
 {
 	constexpr unsigned smem_len = block_size * 8;
 	__shared__ float smem_f32[smem_len];
@@ -152,11 +152,19 @@ int main() {
 	auto swpipe_s2h = [](const std::size_t m, const std::size_t n, const float* const A_f32, half* const A_f16) {
 		constexpr auto block_size = 512;
 		const auto grid_size = n;
-		s2h_swpipe<block_size><<<grid_size, block_size>>>(
-				m, n,
-				A_f32, m,
-				A_f16, m
-				);
+		if (m * n >= (1lu << 32)) {
+			s2h_swpipe<block_size, std::uint32_t><<<grid_size, block_size>>>(
+					m, n,
+					A_f32, m,
+					A_f16, m
+					);
+		} else {
+			s2h_swpipe<block_size, std::uint64_t><<<grid_size, block_size>>>(
+					m, n,
+					A_f32, m,
+					A_f16, m
+					);
+		}
 	};
 	auto original_s2h = [](const std::size_t m, const std::size_t n, const float* const A_f32, half* const A_f16) {
 		const auto block_size = dim3(32, 32);
